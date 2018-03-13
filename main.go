@@ -98,6 +98,7 @@ func mapErrorChannel(dockerErrors <-chan error, failures <-chan error) <-chan bo
 			case e := <-dockerErrors:
 				if e != io.EOF {
 					log.Info("Received error on events channel")
+					log.Error(e)
 					quitChannel <- true
 					return
 				}
