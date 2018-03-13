@@ -2,13 +2,13 @@ package main
 
 import (
 	"context"
-	"errors"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/events"
 	"github.com/docker/docker/api/types/filters"
 	docker "github.com/docker/docker/client"
 	log "github.com/sirupsen/logrus"
 	"io"
+	"strings"
 	"sync"
 )
 
@@ -19,8 +19,10 @@ func logAndFailIfError(err error) {
 }
 
 const (
-	containerStart = "start"
-	containerStop  = "die"
+	containerStart  = "start"
+	containerStop   = "die"
+	serviceLabelKey = "svc.discovery.service.name"
+	taskArnLabelKey = "com.amazonaws.ecs.task-arn"
 )
 
 type worker struct {
@@ -111,10 +113,24 @@ func mapErrorChannel(dockerErrors <-chan error, failures <-chan error) <-chan bo
 }
 
 func getContainerEvents(client *docker.Client, ctx context.Context) (<-chan events.Message, <-chan error) {
-	filters := filters.NewArgs()
-	filters.Add("Type", events.ContainerEventType)
-	return client.Events(ctx, types.EventsOptions{Filters: filters})
+	eventFilter := filters.NewArgs()
+	eventFilter.Add("Type", events.ContainerEventType)
+	return client.Events(ctx, types.EventsOptions{Filters: eventFilter})
 }
+
+type predicate func(string) bool
+
+func getLabelValue(container types.ContainerJSON, predicate predicate) (string, bool) {
+	for k, v := range container.Config.Labels {
+		if predicate(strings.ToLower(k)) {
+			return v, true
+		}
+	}
+	return "", false
+}
+
+var isServiceName predicate = func(k string) bool { return k == serviceLabelKey }
+var isTaskArn predicate = func(k string) bool { return k == taskArnLabelKey }
 
 func main() {
 
@@ -130,15 +146,57 @@ func main() {
 	quitChannel := mapErrorChannel(errorChannel, failureChannel)
 
 	startProcessor := createProcessor(func(e events.Message) error {
-		log.Info("Container Start processor")
-		log.Infof("Got event %+v", e)
+		log.Info("Processing container start")
+		container, err := dockerClient.ContainerInspect(context.Background(), e.ID)
+
+		if err != nil {
+			return err
+		}
+
+		serviceName, ok := getLabelValue(container, isServiceName)
+
+		if !ok {
+			log.Info("Unable to find service name label. Skipping container")
+			return nil
+		}
+
+		taskArn, ok := getLabelValue(container, isTaskArn)
+
+		if !ok {
+			log.Info("Unable to find task arn. Skipping container")
+			return nil
+		}
+
+		log.Infof("Container for Service: %v with Task ARN: %v", serviceName, taskArn)
+
 		return nil
 	})
 
 	stopProcessor := createProcessor(func(e events.Message) error {
-		log.Info("Container Stop processor")
-		log.Infof("Got event %+v", e)
-		return errors.New("failed stop processing")
+		log.Info("Processing container stop")
+		container, err := dockerClient.ContainerInspect(context.Background(), e.ID)
+
+		if err != nil {
+			return err
+		}
+
+		serviceName, ok := getLabelValue(container, isServiceName)
+
+		if !ok {
+			log.Info("Unable to find service name label. Skipping container")
+			return nil
+		}
+
+		taskArn, ok := getLabelValue(container, isTaskArn)
+
+		if !ok {
+			log.Info("Unable to find task arn. Skipping container")
+			return nil
+		}
+
+		log.Infof("Container for Service: %v with Task ARN: %v", serviceName, taskArn)
+
+		return nil
 	})
 
 	processors := map[string]processor{
