@@ -8,69 +8,35 @@
   version = "v0.4.7"
 
 [[projects]]
-  name = "github.com/aws/aws-sdk-go"
-  packages = [
-    "aws",
-    "aws/awserr",
-    "aws/awsutil",
-    "aws/client",
-    "aws/client/metadata",
-    "aws/corehandlers",
-    "aws/credentials",
-    "aws/credentials/ec2rolecreds",
-    "aws/credentials/endpointcreds",
-    "aws/credentials/stscreds",
-    "aws/defaults",
-    "aws/ec2metadata",
-    "aws/endpoints",
-    "aws/request",
-    "aws/session",
-    "aws/signer/v4",
-    "internal/sdkrand",
-    "internal/shareddefaults",
-    "private/protocol",
-    "private/protocol/query",
-    "private/protocol/query/queryutil",
-    "private/protocol/rest",
-    "private/protocol/restxml",
-    "private/protocol/xml/xmlutil",
-    "service/route53",
-    "service/sts"
-  ]
-  revision = "45a97ce8abeff27aeeac668fa01cb85103b0d17e"
-  version = "v1.13.10"
-
-[[projects]]
   name = "github.com/docker/distribution"
   packages = [
-    "digest",
+    "digestset",
     "reference"
   ]
-  revision = "48294d928ced5dd9b378f7fd7c6f5da3ff3f2c89"
-  version = "v2.6.2"
+  revision = "edc3ab29cdff8694dd6feb85cfeb4b5f1b38ed9c"
 
 [[projects]]
   name = "github.com/docker/docker"
   packages = [
+    "api",
     "api/types",
     "api/types/blkiodev",
     "api/types/container",
     "api/types/events",
     "api/types/filters",
+    "api/types/image",
     "api/types/mount",
     "api/types/network",
-    "api/types/reference",
     "api/types/registry",
     "api/types/strslice",
     "api/types/swarm",
+    "api/types/swarm/runtime",
     "api/types/time",
     "api/types/versions",
     "api/types/volume",
-    "client",
-    "pkg/tlsconfig"
+    "client"
   ]
-  revision = "092cba3727bb9b4a2f0e922cd6c0f93ea270e363"
-  version = "v1.13.1"
+  revision = "7848b8beb9d38a98a78b75f78e05f8d2255f9dfe"
 
 [[projects]]
   name = "github.com/docker/go-connections"
@@ -89,15 +55,25 @@
   version = "v0.3.2"
 
 [[projects]]
-  name = "github.com/go-ini/ini"
-  packages = ["."]
-  revision = "6333e38ac20b8949a8dd68baa3650f4dee8f39f0"
-  version = "v1.33.0"
+  name = "github.com/gogo/protobuf"
+  packages = ["proto"]
+  revision = "1adfc126b41513cc696b209667c8656ea7aac67c"
+  version = "v1.0.0"
 
 [[projects]]
-  name = "github.com/jmespath/go-jmespath"
+  name = "github.com/opencontainers/go-digest"
   packages = ["."]
-  revision = "0b12d6b5"
+  revision = "279bed98673dd5bef374d3b6e4b09e2af76183bf"
+  version = "v1.0.0-rc1"
+
+[[projects]]
+  name = "github.com/opencontainers/image-spec"
+  packages = [
+    "specs-go",
+    "specs-go/v1"
+  ]
+  revision = "d60099175f88c47cd379c4738d158884749ed235"
+  version = "v1.0.1"
 
 [[projects]]
   name = "github.com/pkg/errors"
@@ -108,14 +84,14 @@
 [[projects]]
   name = "github.com/sirupsen/logrus"
   packages = ["."]
-  revision = "d682213848ed68c0a260ca37d6dd5ace8423f5ba"
-  version = "v1.0.4"
+  revision = "c155da19408a8799da419ed3eeb0cb5db0ad5dbc"
+  version = "v1.0.5"
 
 [[projects]]
   branch = "master"
   name = "golang.org/x/crypto"
   packages = ["ssh/terminal"]
-  revision = "c7dcf104e3a7a1417abc0230cb0d5240d764159d"
+  revision = "c4a91bd4f524f10d064139674cf55852e055ad01"
 
 [[projects]]
   branch = "master"
@@ -125,7 +101,7 @@
     "context/ctxhttp",
     "proxy"
   ]
-  revision = "d0aafc73d5cdc42264b0af071c261abac580695e"
+  revision = "892bf7b0c6e2f93b51166bf3882e50277fa5afc6"
 
 [[projects]]
   branch = "master"
@@ -134,11 +110,11 @@
     "unix",
     "windows"
   ]
-  revision = "7dca6fe1f43775aa6d1334576870ff63f978f539"
+  revision = "932fb2287bee613f2a65e71685c9d9c0020da979"
 
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "66851fed264b5a990973cbdc43b5e5de94622868c7c7f3b2c01e6d65b6825657"
+  inputs-digest = "b7939cc23fc33471a980c799f39c0e5f059e7f61b282b5bf8ce0dcc57aadcf12"
   solver-name = "gps-cdcl"
   solver-version = 1

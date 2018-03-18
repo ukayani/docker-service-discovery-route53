@@ -1,12 +1,12 @@
 # Tell make to treat all targets as phony
-.PHONY: all build test clean run vet install build-linux
+.PHONY: all build test clean run vet install build-linux release-ecr
 
 # Go parameters
 BINARY_NAME=service-discovery-agent
 BINARY_UNIX=$(BINARY_NAME)-unix
 PROJECT=github.com/ukayani/docker-service-discovery-route53
 GO_VERSION=1.10
-DOCKER_REPO=ukayani/service-discovery-agent-route53
+DOCKER_REPO=kayaniu/service-discovery-agent-route53
 
 all: install build
 
@@ -39,3 +39,11 @@ clean:
 
 vet:
 	@go vet
+
+
+release-ecr: build-linux
+	eval $(aws ecr get-login --no-include-email)
+	docker push $(DOCKER_REPO):latest
+
+release-dockerhub: build-linux
+	docker push $(DOCKER_REPO):latest
