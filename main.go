@@ -2,12 +2,17 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/events"
 	"github.com/docker/docker/api/types/filters"
 	docker "github.com/docker/docker/client"
+	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	"io"
+	"io/ioutil"
+	"net/http"
+	"regexp"
 	"strings"
 	"sync"
 )
@@ -133,6 +138,32 @@ func getLabelValue(container types.ContainerJSON, predicate predicate) (string, 
 var isServiceName predicate = func(k string) bool { return k == serviceLabelKey }
 var isTaskArn predicate = func(k string) bool { return k == taskArnLabelKey }
 
+var ipRegex = regexp.MustCompile(`"IPv4Addresses":\s*\[\s*"(.+)"\]`)
+
+func getContainerIp(containerID string) (string, error) {
+	// ifconfig docker0 | grep -oP 'inet addr:\K\S+'
+	// run container with --add-host host:$(ifconfig docker0 | grep -oP 'inet addr:\K\S+')
+	resp, err := http.Get(fmt.Sprintf("http://host:51678/v1/tasks?dockerid=%v", containerID))
+	if err != nil {
+		return "", err
+	}
+
+	defer resp.Body.Close()
+	body, err := ioutil.ReadAll(resp.Body)
+
+	if err != nil {
+		return "", err
+	}
+	bodyStr := string(body)
+
+	matches := ipRegex.FindStringSubmatch(bodyStr)
+	if len(matches) == 0 {
+		return "", errors.New("No IP address field found")
+	}
+
+	return matches[1], nil
+}
+
 func main() {
 
 	nWorkers := 5
@@ -169,6 +200,15 @@ func main() {
 		}
 
 		log.Infof("Container for Service: %v with Task ARN: %v", serviceName, taskArn)
+
+		ip, err := getContainerIp(container.ID)
+
+		if err != nil {
+			log.Error("Unable to find container IP")
+			return err
+		}
+
+		log.Infof("Container IP: %v", ip)
 
 		return nil
 	})
