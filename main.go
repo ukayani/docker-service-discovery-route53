@@ -2,7 +2,11 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/route53"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/events"
 	"github.com/docker/docker/api/types/filters"
@@ -26,7 +30,7 @@ func logAndFailIfError(err error) {
 const (
 	containerStart  = "start"
 	containerStop   = "die"
-	serviceLabelKey = "svc.discovery.service.name"
+	serviceLabelKey = "discovery.service.name"
 	taskArnLabelKey = "com.amazonaws.ecs.task-arn"
 )
 
@@ -164,7 +168,164 @@ func getContainerIp(containerID string) (string, error) {
 	return matches[1], nil
 }
 
+const defaultTTL = 0
+const defaultWeight = 1
+
+type hostedZone struct {
+	id   string
+	name string
+}
+
+func (h *hostedZone) withServiceName(serviceName string) string {
+	return serviceName + "." + h.name
+}
+
+func createARecord(serviceName string, localIP string, hostedZone *hostedZone) error {
+	sess, err := session.NewSession()
+	if err != nil {
+		return err
+	}
+	r53 := route53.New(sess)
+	// This API call creates a new DNS record for this host
+	dnsName := hostedZone.withServiceName(serviceName)
+	params := &route53.ChangeResourceRecordSetsInput{
+		ChangeBatch: &route53.ChangeBatch{
+			Changes: []*route53.Change{
+				{
+					Action: aws.String(route53.ChangeActionCreate),
+					ResourceRecordSet: &route53.ResourceRecordSet{
+						Name: aws.String(dnsName),
+						// It creates an A record with the IP of the host running the agent
+						Type: aws.String(route53.RRTypeA),
+						ResourceRecords: []*route53.ResourceRecord{
+							{
+								Value: aws.String(localIP),
+							},
+						},
+						SetIdentifier: aws.String(dnsName),
+						// TTL=0 to avoid DNS caches
+						TTL:    aws.Int64(defaultTTL),
+						Weight: aws.Int64(defaultWeight),
+					},
+				},
+			},
+			Comment: aws.String("Host A Record Created"),
+		},
+		HostedZoneId: aws.String(hostedZone.id),
+	}
+	_, err = r53.ChangeResourceRecordSets(params)
+
+	if err == nil {
+		log.Info("Record " + dnsName + " created, resolves to " + localIP)
+	}
+
+	return err
+}
+
+func isMatch(rrs *route53.ResourceRecordSet, name string) bool {
+	return rrs != nil &&
+		rrs.Type != nil &&
+		*rrs.Type == route53.RRTypeA &&
+		*rrs.Name == name
+}
+
+func deleteARecord(serviceName string, hostedZone *hostedZone) error {
+	sess, err := session.NewSession()
+	if err != nil {
+		return err
+	}
+	r53 := route53.New(sess)
+	// This API call creates a new DNS record for this host
+	dnsName := hostedZone.withServiceName(serviceName)
+
+	paramsList := &route53.ListResourceRecordSetsInput{
+		HostedZoneId:    aws.String(hostedZone.id), // Required
+		MaxItems:        aws.String("100"),
+		StartRecordName: aws.String(dnsName),
+		StartRecordType: aws.String(route53.RRTypeA),
+	}
+	more := true
+	var recordSetToDelete *route53.ResourceRecordSet
+	resp, err := r53.ListResourceRecordSets(paramsList)
+	for more && recordSetToDelete == nil && err == nil {
+		for _, rrset := range resp.ResourceRecordSets {
+			if isMatch(rrset, dnsName) {
+				recordSetToDelete = rrset
+			}
+		}
+
+		more = resp.IsTruncated != nil && *resp.IsTruncated
+		if more {
+			paramsList.StartRecordIdentifier = resp.NextRecordIdentifier
+			resp, err = r53.ListResourceRecordSets(paramsList)
+		}
+	}
+	if err != nil {
+		return err
+	}
+	if recordSetToDelete == nil {
+		log.Error("Route53 record doesn't exist")
+		return nil
+	}
+
+	// This API call deletes the DNS record for the service for this docker ID
+	params := &route53.ChangeResourceRecordSetsInput{
+		ChangeBatch: &route53.ChangeBatch{
+			Comment: aws.String("Service Discovery Created Record"),
+			Changes: []*route53.Change{
+				{
+					Action:            aws.String(route53.ChangeActionDelete),
+					ResourceRecordSet: recordSetToDelete,
+				},
+			},
+		},
+		HostedZoneId: aws.String(hostedZone.id),
+	}
+	_, err = r53.ChangeResourceRecordSets(params)
+
+	if err == nil {
+		log.Info("Record " + dnsName + " deleted")
+	}
+	return err
+}
+
+func getHostedZone(id string) (*hostedZone, error) {
+	sess, err := session.NewSession()
+	if err != nil {
+		return nil, err
+	}
+	r53 := route53.New(sess)
+
+	params := &route53.GetHostedZoneInput{
+		Id: aws.String(id),
+	}
+	hz, err := r53.GetHostedZone(params)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &hostedZone{
+		id:   id,
+		name: aws.StringValue(hz.HostedZone.Name),
+	}, nil
+}
+
 func main() {
+
+	var hostedZoneId = flag.String("hostedZoneId", "", "hosted zone ID in which to register records")
+
+	flag.Parse()
+
+	if len(*hostedZoneId) == 0 {
+		logAndFailIfError(errors.New("hostedZoneId must be provided"))
+	}
+
+	hz, err := getHostedZone(*hostedZoneId)
+
+	if err != nil {
+		logAndFailIfError(err)
+	}
 
 	nWorkers := 5
 	wg := sync.WaitGroup{}
@@ -209,8 +370,7 @@ func main() {
 		}
 
 		log.Infof("Container IP: %v", ip)
-
-		return nil
+		return createARecord(serviceName, ip, hz)
 	})
 
 	stopProcessor := createProcessor(func(e events.Message) error {
@@ -237,7 +397,7 @@ func main() {
 
 		log.Infof("Container for Service: %v with Task ARN: %v", serviceName, taskArn)
 
-		return nil
+		return deleteARecord(serviceName, hz)
 	})
 
 	processors := map[string]processor{
