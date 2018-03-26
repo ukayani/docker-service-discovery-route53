@@ -192,7 +192,7 @@ func createARecord(serviceName string, localIP string, hostedZone *hostedZone) e
 		ChangeBatch: &route53.ChangeBatch{
 			Changes: []*route53.Change{
 				{
-					Action: aws.String(route53.ChangeActionCreate),
+					Action: aws.String(route53.ChangeActionUpsert),
 					ResourceRecordSet: &route53.ResourceRecordSet{
 						Name: aws.String(dnsName),
 						// It creates an A record with the IP of the host running the agent
@@ -222,14 +222,15 @@ func createARecord(serviceName string, localIP string, hostedZone *hostedZone) e
 	return err
 }
 
-func isMatch(rrs *route53.ResourceRecordSet, name string) bool {
+func isMatch(rrs *route53.ResourceRecordSet, name string, ip string) bool {
 	return rrs != nil &&
 		rrs.Type != nil &&
 		*rrs.Type == route53.RRTypeA &&
-		*rrs.Name == name
+		*rrs.Name == name &&
+		*rrs.ResourceRecords[0].Value == ip
 }
 
-func deleteARecord(serviceName string, hostedZone *hostedZone) error {
+func deleteARecord(serviceName string, localIP string, hostedZone *hostedZone) error {
 	sess, err := session.NewSession()
 	if err != nil {
 		return err
@@ -249,7 +250,7 @@ func deleteARecord(serviceName string, hostedZone *hostedZone) error {
 	resp, err := r53.ListResourceRecordSets(paramsList)
 	for more && recordSetToDelete == nil && err == nil {
 		for _, rrset := range resp.ResourceRecordSets {
-			if isMatch(rrset, dnsName) {
+			if isMatch(rrset, dnsName, localIP) {
 				recordSetToDelete = rrset
 			}
 		}
@@ -397,7 +398,14 @@ func main() {
 
 		log.Infof("Container for Service: %v with Task ARN: %v", serviceName, taskArn)
 
-		return deleteARecord(serviceName, hz)
+		ip, err := getContainerIp(container.ID)
+
+		if err != nil {
+			log.Error("Unable to find container IP")
+			return err
+		}
+
+		return deleteARecord(serviceName, ip, hz)
 	})
 
 	processors := map[string]processor{
