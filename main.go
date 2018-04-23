@@ -142,7 +142,7 @@ func getLabelValue(container types.ContainerJSON, predicate predicate) (string, 
 var isServiceName predicate = func(k string) bool { return k == serviceLabelKey }
 var isTaskArn predicate = func(k string) bool { return k == taskArnLabelKey }
 
-var ipRegex = regexp.MustCompile(`"IPv4Addresses":\s*\[\s*"(.+)"\]`)
+var ipRegex = regexp.MustCompile(`"IPv4Addresses":\s*\[\s*"([^"]+)"\]`)
 
 func getContainerIp(containerID string) (string, error) {
 	// ifconfig docker0 | grep -oP 'inet addr:\K\S+'
